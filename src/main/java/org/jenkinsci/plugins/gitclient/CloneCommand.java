@@ -115,4 +115,12 @@ public interface CloneCommand extends GitCommand {
      * @return a {@link org.jenkinsci.plugins.gitclient.CloneCommand} object.
      */
     CloneCommand depth(Integer depth);
+
+    /**
+     * partialCloneFilter.
+     *
+     * @param partialCloneFilter a {@link java.lang.String} object.
+     * @return a {@link org.jenkinsci.plugins.gitclient.CloneCommand} object.
+     */
+    CloneCommand partialCloneFilter(String partialCloneFilter);
 }

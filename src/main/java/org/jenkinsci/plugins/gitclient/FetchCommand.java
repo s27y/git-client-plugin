@@ -22,6 +22,15 @@ public interface FetchCommand extends GitCommand {
     FetchCommand from(URIish remote, List<RefSpec> refspecs);
 
     /**
+     * from pre-defined remote
+     *
+     * @param predefinedRemote a {@link java.lang.String} object
+     * @param refspecs a {@link java.util.List} object.
+     * @return a {@link org.jenkinsci.plugins.gitclient.FetchCommand} object.
+     */
+    FetchCommand from(String predefinedRemote, List<RefSpec> refspecs);
+
+    /**
      * prune.
      *
      * @return a {@link org.jenkinsci.plugins.gitclient.FetchCommand} object.
