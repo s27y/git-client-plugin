@@ -884,7 +884,6 @@ public class CliGitAPIImpl extends LegacyCompatibleGitAPIImpl {
                 for (RefSpec refSpec : refspecs) {
                     launchCommand("config", "--add", "remote." + remoteName + ".fetch", refSpec.toString());
                 }
-                listener.getLogger().println("RefSpec - END");
             }
 
         };
@@ -3022,7 +3021,17 @@ public class CliGitAPIImpl extends LegacyCompatibleGitAPIImpl {
                         args.add("-f");
                     }
                     args.add(ref);
-                    launchCommandIn(args, workspace, checkoutEnv, timeout);
+                    
+                    try {
+                        // attemp to use credential for remote origin
+                        final String remoteUrl = getRemoteUrl("origin");
+                        StandardCredentials cred = credentials.get(remoteUrl);
+                        if (cred == null) cred = defaultCredentials;
+                        launchCommandWithCredentials(args, workspace, cred, new URIish(remoteUrl), timeout);
+                    } catch (GitException | URISyntaxException e) {
+                        listener.getLogger().println("Unable to run checkout with credential, fail back to checkout without credential");
+                        launchCommandIn(args, workspace, checkoutEnv, timeout);
+                    }
 
                     if (lfsRemote != null) {
                         final String url = getRemoteUrl(lfsRemote);
