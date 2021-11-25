@@ -3003,7 +3003,16 @@ public class CliGitAPIImpl extends LegacyCompatibleGitAPIImpl {
                         // First, checkout to detached HEAD, so we can delete the branch.
                         ArgumentListBuilder args = new ArgumentListBuilder();
                         args.add("checkout", "-f", ref);
-                        launchCommandIn(args, workspace, checkoutEnv, timeout);
+                        try {
+                            // attemp to use credential for remote origin
+                            final String remoteUrl = getRemoteUrl("origin");
+                            StandardCredentials cred = credentials.get(remoteUrl);
+                            if (cred == null) cred = defaultCredentials;
+                            launchCommandWithCredentials(args, workspace, cred, new URIish(remoteUrl), timeout);
+                        } catch (GitException | URISyntaxException e) {
+                            listener.getLogger().println("Unable to run checkout with credential, fail back to checkout without credential");
+                            launchCommandIn(args, workspace, checkoutEnv, timeout);
+                        }
 
                         // Second, check to see if the branch actually exists, and then delete it if it does.
                         for (Branch b : getBranches()) {
