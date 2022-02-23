@@ -504,6 +504,7 @@ public class CliGitAPIImpl extends LegacyCompatibleGitAPIImpl {
     public FetchCommand fetch_() {
         return new FetchCommand() {
             private URIish url;
+            private String RemoteName;
             private List<RefSpec> refspecs;
             private boolean prune;
             private boolean shallow;
@@ -514,6 +515,13 @@ public class CliGitAPIImpl extends LegacyCompatibleGitAPIImpl {
             @Override
             public FetchCommand from(URIish remote, List<RefSpec> refspecs) {
                 this.url = remote;
+                this.refspecs = refspecs;
+                return this;
+            }
+
+            @Override
+            public FetchCommand from(String predefinedRemote, List<RefSpec> refspecs) {
+                this.RemoteName = predefinedRemote;
                 this.refspecs = refspecs;
                 return this;
             }
@@ -582,7 +590,11 @@ public class CliGitAPIImpl extends LegacyCompatibleGitAPIImpl {
                 StandardCredentials cred = credentials.get(url.toPrivateString());
                 if (cred == null) cred = defaultCredentials;
                 if (isAtLeastVersion(1,8,0,0)) {
-                    addCheckedRemoteUrl(args, url.toPrivateASCIIString());
+                    if (this.RemoteName != null) {
+                        args.add(RemoteName);
+                    } else {
+                        addCheckedRemoteUrl(args, url.toPrivateASCIIString());
+                    }
                 } else {
                     // CLI git 1.7.1 on CentOS 6 rejects URL encoded
                     // repo URL. This is how git client behaved before
@@ -693,13 +705,14 @@ public class CliGitAPIImpl extends LegacyCompatibleGitAPIImpl {
     public CloneCommand clone_() {
         return new CloneCommand() {
             private String url;
-            private String origin = "origin";
+            private String remoteName = "origin";
             private String reference;
             private boolean shallow,shared;
             private Integer timeout;
             private boolean tags = true;
             private List<RefSpec> refspecs;
             private Integer depth = 1;
+            private String partialCloneFilter;
 
             @Override
             public CloneCommand url(String url) {
@@ -709,7 +722,7 @@ public class CliGitAPIImpl extends LegacyCompatibleGitAPIImpl {
 
             @Override
             public CloneCommand repositoryName(String name) {
-                this.origin = name;
+                this.remoteName = name;
                 return this;
             }
 
@@ -768,6 +781,12 @@ public class CliGitAPIImpl extends LegacyCompatibleGitAPIImpl {
             @Override
             public CloneCommand refspecs(List<RefSpec> refspecs) {
                 this.refspecs = new ArrayList<>(refspecs);
+                return this;
+            }
+
+            @Override
+            public CloneCommand partialCloneFilter(String partialCloneFilter) {
+                this.partialCloneFilter = partialCloneFilter;
                 return this;
             }
 
@@ -837,17 +856,33 @@ public class CliGitAPIImpl extends LegacyCompatibleGitAPIImpl {
                 }
 
                 if (refspecs == null) {
-                    refspecs = Collections.singletonList(new RefSpec("+refs/heads/*:refs/remotes/"+origin+"/*"));
+                    refspecs = Collections.singletonList(new RefSpec("+refs/heads/*:refs/remotes/"+remoteName+"/*"));
                 }
-                fetch_().from(urIish, refspecs)
-                        .shallow(shallow)
-                        .depth(depth)
-                        .timeout(timeout)
-                        .tags(tags)
-                        .execute();
-                setRemoteUrl(origin, url);
+                // For PartialClone, we override the fetch and setRemoteUrlsequence
+                // so setRemoteUrl started before fetch command so we can use `git fetch `
+                if (this.partialCloneFilter != null ) {
+                    listener.getLogger().println("partialCloneFilter enable: "+ this.partialCloneFilter);
+                    setRemoteUrl(remoteName, url);
+                    setPartialCloneConfig(this.partialCloneFilter);
+                    // we need to use remote name instead of urIish for fetch
+                    fetch_().from(urIish, refspecs)
+                            .from(remoteName, refspecs)
+                            .shallow(shallow)
+                            .depth(depth)
+                            .timeout(timeout)
+                            .tags(tags)
+                            .execute();
+                } else {
+                    fetch_().from(urIish, refspecs)
+                            .shallow(shallow)
+                            .depth(depth)
+                            .timeout(timeout)
+                            .tags(tags)
+                            .execute();
+                    setRemoteUrl(remoteName, url);
+                }
                 for (RefSpec refSpec : refspecs) {
-                    launchCommand("config", "--add", "remote." + origin + ".fetch", refSpec.toString());
+                    launchCommand("config", "--add", "remote." + remoteName + ".fetch", refSpec.toString());
                 }
             }
 
@@ -2968,7 +3003,16 @@ public class CliGitAPIImpl extends LegacyCompatibleGitAPIImpl {
                         // First, checkout to detached HEAD, so we can delete the branch.
                         ArgumentListBuilder args = new ArgumentListBuilder();
                         args.add("checkout", "-f", ref);
-                        launchCommandIn(args, workspace, checkoutEnv, timeout);
+                        try {
+                            // attemp to use credential for remote origin
+                            final String remoteUrl = getRemoteUrl("origin");
+                            StandardCredentials cred = credentials.get(remoteUrl);
+                            if (cred == null) cred = defaultCredentials;
+                            launchCommandWithCredentials(args, workspace, cred, new URIish(remoteUrl), timeout);
+                        } catch (GitException | URISyntaxException e) {
+                            listener.getLogger().println("Unable to run checkout with credential, fail back to checkout without credential");
+                            launchCommandIn(args, workspace, checkoutEnv, timeout);
+                        }
 
                         // Second, check to see if the branch actually exists, and then delete it if it does.
                         for (Branch b : getBranches()) {
@@ -2986,7 +3030,17 @@ public class CliGitAPIImpl extends LegacyCompatibleGitAPIImpl {
                         args.add("-f");
                     }
                     args.add(ref);
-                    launchCommandIn(args, workspace, checkoutEnv, timeout);
+                    
+                    try {
+                        // attemp to use credential for remote origin
+                        final String remoteUrl = getRemoteUrl("origin");
+                        StandardCredentials cred = credentials.get(remoteUrl);
+                        if (cred == null) cred = defaultCredentials;
+                        launchCommandWithCredentials(args, workspace, cred, new URIish(remoteUrl), timeout);
+                    } catch (GitException | URISyntaxException e) {
+                        listener.getLogger().println("Unable to run checkout with credential, fail back to checkout without credential");
+                        launchCommandIn(args, workspace, checkoutEnv, timeout);
+                    }
 
                     if (lfsRemote != null) {
                         final String url = getRemoteUrl(lfsRemote);
@@ -3835,6 +3889,17 @@ public class CliGitAPIImpl extends LegacyCompatibleGitAPIImpl {
             tags.add(new GitObject(entry.getKey(), entry.getValue()));
         }
         return tags;
+    }
+
+    /**
+     * Set a local repo to use partial clone
+     * <p>
+     * This is applied for fetch operation only
+     */
+    public void setPartialCloneConfig(String partialCloneFilter) throws GitException, InterruptedException {
+        launchCommand( "config", "core.repositoryformatversion", "1" );
+        launchCommand( "config", "remote.origin.promisor", "true" );
+        launchCommand( "config", "remote.origin.partialclonefilter", partialCloneFilter );
     }
 
 }

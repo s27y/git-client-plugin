@@ -664,6 +664,13 @@ public class JGitAPIImpl extends LegacyCompatibleGitAPIImpl {
                     throw new GitException(e);
                 }
             }
+
+            @Override
+            public org.jenkinsci.plugins.gitclient.FetchCommand from(String predefinedRemote, List<RefSpec> refspecs) {
+                // TODO Auto-generated method stub
+                listener.getLogger().println("partialCloneFilter is not implemented in JGITAPI");
+                return this;
+            }
         };
     }
 
@@ -1492,6 +1499,13 @@ public class JGitAPIImpl extends LegacyCompatibleGitAPIImpl {
                 } finally {
                     if (repository != null) repository.close();
                 }
+            }
+
+            @Override
+            public CloneCommand partialCloneFilter(String partialCloneFilter) {
+                // TODO Auto-generated method stub
+                listener.getLogger().println("partialCloneFilter is not implemented in JGITAPI");
+                return this;
             }
         };
     }
